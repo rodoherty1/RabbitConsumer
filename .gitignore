@@ -19,7 +19,8 @@ project/plugins/project/
 .scala_dependencies
 .worksheet
 
-application.conf
+src/main/resources/local.conf
+src/main/resources/uat.conf
 
 
 ### Intellij ###

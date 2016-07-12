@@ -34,15 +34,15 @@ val scalatest = Seq(
 
 val logging = Seq (
   "org.slf4j" % "slf4j-api" % "1.7.12",
-  "ch.qos.logback" % "logback-classic" % "1.1.3",
-  "com.typesafe.scala-logging" %% "scala-logging" % "3.1.0"
+  "ch.qos.logback" % "logback-classic" % "1.1.3"
+//  "com.typesafe.scala-logging" %% "scala-logging" % "3.1.0"
 )
 
 val amqpClient = Seq(
     "com.rabbitmq" % "amqp-client" % "3.5.3"
 )
 
-libraryDependencies ++= scalacheck ++ scalatest ++ amqpClient ++ scalaz ++ argonaut ++ typesafeConfig
+libraryDependencies ++= logging ++ scalacheck ++ scalatest ++ amqpClient ++ scalaz ++ argonaut ++ typesafeConfig
 
 initialCommands in console :=
   """

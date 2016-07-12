@@ -13,15 +13,15 @@ import scala.collection.JavaConverters._
 import scala.util.Try
 import com.typesafe.config.ConfigFactory
 
+import org.slf4j.LoggerFactory
 
 object Rabbit {
 
-  val conf = ConfigFactory.load("application.conf")
+  val logger = LoggerFactory.getLogger(Rabbit.getClass)
+
+  val conf = ConfigFactory.load("local.conf")
 
   val connections = conf.getConfigList("amqp.connections").asScala
-
-  val DELAY_EXCHANGE_NAME = ""
-  val DELAY_QUEUE_NAME    = ""
 
   val factory = {
     val factory = new ConnectionFactory()
