@@ -1,9 +1,7 @@
 package com.rob
 
 import java.io.{File, FileOutputStream, PrintWriter}
-import java.util
 
-import com.rabbitmq.client.AMQP.BasicProperties.Builder
 import com.rabbitmq.client._
 
 import scalaz._
@@ -13,9 +11,7 @@ import Argonaut._
 
 import scala.collection.JavaConverters._
 import scala.util.Try
-import com.typesafe.config.{Config, ConfigFactory, ConfigList}
-
-import scala.collection.mutable
+import com.typesafe.config.ConfigFactory
 
 
 object Rabbit {
@@ -40,25 +36,6 @@ object Rabbit {
     factory
   }
 
-//  def publish(): Unit = publish("""{"id":123146, "__SluiceChangeType__":"UPDATE", "status":"V","issuer_card_id":"1446430854974957","card_id":"1000","acct_id":"27329531"}""")
-
-
-//  def publish(msg: String): Unit = {
-//    val connection = factory.newConnection()
-//    val channel = connection.createChannel()
-//
-//    channel.exchangeDeclare(UI_EXCHANGE_NAME, "fanout", true)
-//    channel.exchangeDeclare(DM_EXCHANGE_NAME, "direct", true)
-//
-//    val builder = new Builder()
-//    builder.headers(Map[String, AnyRef]("seqNo" -> Long.box(System.currentTimeMillis), "committedAt" -> Long.box(System.currentTimeMillis)).asJava)
-//
-////    channel.basicPublish(EXCHANGE_NAME, "cardStateChange", builder.build(), msg.getBytes())
-//    println( s"""[x] Sent $msg""")
-//
-//    channel.close()
-//    connection.close()
-//  }
 
   def init(): Unit = {
     connections.foreach( cxn => {
@@ -74,51 +51,6 @@ object Rabbit {
       channel.queueDeclare(queueName, true, false, false, Map.empty[String, AnyRef].asJava).getQueue
       channel.queueBind(queueName, exchange, routingKey)
     })
-//    val connection = factory.newConnection()
-//    val channel = connection.createChannel()
-//
-//    channel.exchangeDeclare(DM_EXCHANGE_NAME, "direct", true)
-//    channel.exchangeDeclare(UI_EXCHANGE_NAME, "fanout", true)
-
-//    val args = Map[String, AnyRef]("x-dead-letter-exchange" -> DELAY_EXCHANGE_NAME, "x-dead-letter-routing-key" -> ROUTING_KEY).asJava
-//    channel.queueDeclare(UI_QUEUE_NAME, true, false, false, Map.empty[String, AnyRef].asJava).getQueue
-//    channel.queueDeclare(DM_QUEUE_NAME, true, false, false, Map.empty[String, AnyRef].asJava).getQueue
-//
-//    val delayArgs = Map[String, AnyRef]("x-dead-letter-exchange" -> EXCHANGE_NAME, "x-dead-letter-routing-key" -> ROUTING_KEY, "x-message-ttl" -> Long.box(10000L)).asJava
-//    channel.queueDeclare(DELAY_QUEUE_NAME, true, false, false, delayArgs).getQueue
-
-//    channel.queueBind(UI_QUEUE_NAME, UI_EXCHANGE_NAME, UI_ROUTING_KEY)
-//    channel.queueBind(DM_QUEUE_NAME, DM_EXCHANGE_NAME, DM_ROUTING_KEY)
-  }
-
-  def nackNext(): Unit = {
-    val connection = factory.newConnection()
-    val channel = connection.createChannel()
-
-//    channel.exchangeDeclare(EXCHANGE_NAME, "fanout")
-//    channel.exchangeDeclare(DELAY_EXCHANGE_NAME, "direct")
-//
-//    val args = Map[String, AnyRef]("x-dead-letter-exchange" -> DELAY_EXCHANGE_NAME, "x-dead-letter-routing-key" -> ROUTING_KEY).asJava
-//    channel.queueDeclare(QUEUE_NAME, true, false, false, args).getQueue
-//
-//    val delayArgs = Map[String, AnyRef]("x-dead-letter-exchange" -> EXCHANGE_NAME, "x-dead-letter-routing-key" -> ROUTING_KEY).asJava
-//    channel.queueDeclare(DELAY_QUEUE_NAME, true, false, false, delayArgs).getQueue
-//
-//    channel.queueBind(QUEUE_NAME, EXCHANGE_NAME, ROUTING_KEY)
-//    channel.queueBind(DELAY_QUEUE_NAME, DELAY_EXCHANGE_NAME, ROUTING_KEY)
-//
-//    val consumer = new DefaultConsumer(channel) {
-//      override def handleDelivery(consumerTag: String, envelope: Envelope, properties: AMQP.BasicProperties, body: Array[Byte]) {
-//        val message = new String(body, "UTF-8")
-//        println( s""" [x] Received $message""")
-//        channel.basicNack(envelope.getDeliveryTag, false, false)
-//      }
-//    }
-
-//    val response = channel.basicGet(QUEUE_NAME, false)
-//
-//    println( s""" [x] Nacking ${new String(response.getBody, "UTF-8")}""")
-//    channel.basicNack(response.getEnvelope.getDeliveryTag, false, false)
   }
 
   def all() = connections.foreach(cxn => {
