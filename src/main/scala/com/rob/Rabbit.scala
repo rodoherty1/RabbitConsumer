@@ -11,9 +11,10 @@ import Argonaut._
 
 import scala.collection.JavaConverters._
 import scala.util.Try
-import com.typesafe.config.ConfigFactory
-
+import com.typesafe.config.{Config, ConfigFactory}
 import org.slf4j.LoggerFactory
+
+import scalaz.stream.channel
 
 object Rabbit {
 
@@ -23,52 +24,58 @@ object Rabbit {
 
   val connections = conf.getConfigList("amqp.connections").asScala
 
-  val factory = {
-    val factory = new ConnectionFactory()
-
-    factory.setHost(conf.getString("amqp.ip"))
-    factory.setPort(conf.getInt("amqp.port"))
-    factory.setUsername(conf.getString("amqp.user"))
-    factory.setPassword(conf.getString("amqp.password"))
-
-    if (conf.getBoolean("amqp.useSSL")) factory.useSslProtocol()
-
-    factory
-  }
 
 
-  def init(): Unit = {
-    connections.foreach( cxn => {
-      val exchange     = cxn.getString("exchangeName")
-      val exchangeType = cxn.getString("exchangeType")
-      val queueName    = cxn.getString("queue")
-      val routingKey   = cxn.getString("routingKey")
 
-      val connection = factory.newConnection()
-      val channel = connection.createChannel()
+  def init(cxn: Config) = {
+    val exchange     = cxn.getString("exchangeName")
+    val exchangeType = cxn.getString("exchangeType")
+    val queueName    = cxn.getString("queue")
+    val routingKey   = cxn.getString("routingKey")
 
-      channel.exchangeDeclare(exchange, exchangeType, true)
-      channel.queueDeclare(queueName, true, false, false, Map.empty[String, AnyRef].asJava).getQueue
-      channel.queueBind(queueName, exchange, routingKey)
-    })
-  }
+    val factory = {
+      val cxnFactory = new ConnectionFactory()
 
-  def all() = connections.foreach(cxn => {
-      val queueName = cxn.getString("queue")
-      val fileName  = cxn.getString("fileName")
+      cxnFactory.setHost(conf.getString("amqp.ip"))
+      cxnFactory.setPort(conf.getInt("amqp.port"))
+      cxnFactory.setUsername(conf.getString("amqp.user"))
+      cxnFactory.setPassword(conf.getString("amqp.password"))
 
-      val f = new File(fileName.replaceFirst("^~",System.getProperty("user.home")))
-      f.createNewFile()
+      if (conf.getBoolean("amqp.useSSL")) cxnFactory.useSslProtocol()
 
-      val pw = new PrintWriter(new FileOutputStream(f, true))
-
-      ackAll(queueName, pw)
-      pw.close()
+      cxnFactory
     }
-  )
 
-  private def ackAll(queueName: String, pw: PrintWriter): Unit = {
+    val connection = factory.newConnection()
+    val channel = connection.createChannel()
 
+    channel.exchangeDeclare(exchange, exchangeType, true)
+    channel.queueDeclare(queueName, true, false, false, Map.empty[String, AnyRef].asJava).getQueue
+    channel.queueBind(queueName, exchange, routingKey)
+
+    ackOne(channel)(queueName)
+  }
+
+  def all() = {
+    val ackOnes = connections.map(init)
+
+    connections zip ackOnes foreach {
+      case (config, f) =>
+        val fileName = config.getString("fileName")
+
+        val file = new File(fileName.replaceFirst("^~", System.getProperty("user.home")))
+        file.createNewFile()
+
+        val pw = new PrintWriter(new FileOutputStream(file, true))
+
+        ackAll(pw)(f)
+
+        pw.close()
+    }
+  }
+
+
+  private def ackAll(pw: PrintWriter)(f: Int => Option[Json]): Unit = {
     def loop(count: Int = 0, f: Int => Option[Json]): Unit = {
       f(count) match {
         case Some(json) =>
@@ -80,13 +87,10 @@ object Rabbit {
       }
     }
 
-    loop(f = ackOne(queueName))
+    loop(count = 0, f)
   }
 
-  private def ackOne(queueName: String)(count: Int = 0): Option[Json] = {
-    val connection = factory.newConnection()
-    val channel = connection.createChannel()
-
+  private def ackOne(channel: Channel)(queueName: String)(count: Int = 0): Option[Json] = {
     val response = Option(channel.basicGet(queueName, false))
 
     val json = response.flatMap{ res => {
@@ -99,10 +103,11 @@ object Rabbit {
       }
     }
 
-    for {
-      _ <- Try(channel.close())
-      _ <- Try(connection.close())
-    } yield ()
+//    for {
+//      _ <- Try(channel.close())
+//      _ <- Try(connection.close())
+//    } yield ()
+
 
     json
   }
