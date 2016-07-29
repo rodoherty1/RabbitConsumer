@@ -21,6 +21,7 @@ project/plugins/project/
 
 src/main/resources/local.conf
 src/main/resources/uat.conf
+src/main/resources/oat.conf
 
 
 ### Intellij ###

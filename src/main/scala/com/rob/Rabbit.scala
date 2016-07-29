@@ -11,99 +11,114 @@ import Argonaut._
 
 import scala.collection.JavaConverters._
 import scala.util.Try
-import com.typesafe.config.ConfigFactory
-
+import com.typesafe.config.{Config, ConfigFactory}
 import org.slf4j.LoggerFactory
+
+
+
+case class Cxn(connection: Connection, channel: Channel, queueName: String)
 
 object Rabbit {
 
   val logger = LoggerFactory.getLogger(Rabbit.getClass)
 
-  val conf = ConfigFactory.load("local.conf")
+  val conf = ConfigFactory.load("uat.conf")
 
   val connections = conf.getConfigList("amqp.connections").asScala
 
-  val factory = {
-    val factory = new ConnectionFactory()
+  def init(cxn: Config): Cxn = {
+    val exchange     = cxn.getString("exchangeName")
+    val queueName    = cxn.getString("queue")
+    val routingKey   = cxn.getString("routingKey")
 
-    factory.setHost(conf.getString("amqp.ip"))
-    factory.setPort(conf.getInt("amqp.port"))
-    factory.setUsername(conf.getString("amqp.user"))
-    factory.setPassword(conf.getString("amqp.password"))
+    val factory = {
+      val cxnFactory = new ConnectionFactory()
 
-    if (conf.getBoolean("amqp.useSSL")) factory.useSslProtocol()
+      cxnFactory.setHost(cxn.getString("ip"))
+      cxnFactory.setPort(cxn.getInt("port"))
+      cxnFactory.setUsername(cxn.getString("user"))
+      cxnFactory.setPassword(cxn.getString("password"))
 
-    factory
-  }
+      if (cxn.getBoolean("useSSL")) cxnFactory.useSslProtocol()
 
-
-  def init(): Unit = {
-    connections.foreach( cxn => {
-      val exchange     = cxn.getString("exchangeName")
-      val exchangeType = cxn.getString("exchangeType")
-      val queueName    = cxn.getString("queue")
-      val routingKey   = cxn.getString("routingKey")
-
-      val connection = factory.newConnection()
-      val channel = connection.createChannel()
-
-      channel.exchangeDeclare(exchange, exchangeType, true)
-      channel.queueDeclare(queueName, true, false, false, Map.empty[String, AnyRef].asJava).getQueue
-      channel.queueBind(queueName, exchange, routingKey)
-    })
-  }
-
-  def all() = connections.foreach(cxn => {
-      val queueName = cxn.getString("queue")
-      val fileName  = cxn.getString("fileName")
-
-      val f = new File(fileName.replaceFirst("^~",System.getProperty("user.home")))
-      f.createNewFile()
-
-      val pw = new PrintWriter(new FileOutputStream(f, true))
-
-      ackAll(queueName, pw)
-      pw.close()
+      cxnFactory
     }
-  )
 
-  private def ackAll(queueName: String, pw: PrintWriter): Unit = {
+    val connection = factory.newConnection()
+    val channel    = connection.createChannel()
 
-    def loop(count: Int = 0, f: Int => Option[Json]): Unit = {
-      f(count) match {
+    channel.exchangeDeclarePassive(exchange)
+    channel.queueDeclare(queueName, true, false, false, Map.empty[String, AnyRef].asJava).getQueue
+    channel.queueBind(queueName, exchange, routingKey)
+
+    Cxn(connection, channel, queueName)
+  }
+
+  private def close(cxn: Cxn) = {
+    for {
+      _ <- Try(cxn.channel.close())
+      _ <- Try(cxn.connection.close())
+    } yield ()
+  }
+
+
+
+  def all() = {
+    val cxns = connections.map(init)
+
+    connections zip cxns foreach {
+      case (config, cxn) =>
+        val fileName = config.getString("fileName")
+
+        val file = new File(fileName.replaceFirst("^~", System.getProperty("user.home")))
+        file.createNewFile()
+
+        val pw = new PrintWriter(new FileOutputStream(file, true))
+
+        ackAll(pw)(cxn)
+
+        pw.close()
+        close(cxn)
+    }
+  }
+
+
+  private def ackAll(pw: PrintWriter)(cxn: Cxn): Unit = {
+    def loop(count: Int = 0): Unit = {
+      ackOne(cxn)(count) match {
         case Some(json) =>
           pw.append(json.spaces2)
           pw.append(",\n")
-          loop(count + 1, f)
+          loop(count + 1)
 
         case None => println ("No new messages")
       }
     }
 
-    loop(f = ackOne(queueName))
+    loop(count = 0)
   }
 
-  private def ackOne(queueName: String)(count: Int = 0): Option[Json] = {
-    val connection = factory.newConnection()
-    val channel = connection.createChannel()
 
-    val response = Option(channel.basicGet(queueName, false))
+  private def ackOne(cxn: Cxn)(count: Int = 0): Option[Json] = {
+    val response = Option(cxn.channel.basicGet(cxn.queueName, false))
 
     val json = response.flatMap{ res => {
-        val msgBody = new String(res.getBody, "UTF-8")
+      val msgBody = new String(res.getBody, "UTF-8")
 
-        channel.basicAck(res.getEnvelope.getDeliveryTag, false)
+      cxn.channel.basicAck(res.getEnvelope.getDeliveryTag, false)
 
-        println(s"""Acking message #$count """)
-        msgBody.parseOption
-      }
+      println(s"""Acking message #$count """)
+      msgBody.parseOption
     }
-
-    for {
-      _ <- Try(channel.close())
-      _ <- Try(connection.close())
-    } yield ()
+    }
 
     json
   }
+//
+//
+//  def x() = {
+//    val dt = new DateTime()
+//    val fmt = DateTimeFormat.forPattern("MMMM, yyyy")
+//    fmt.print(dt)
+//  }
 }

@@ -10,6 +10,8 @@ val scalazV = "7.1.3"
 val scalazStreamV = "0.8"
 val argonautV = "6.1"
 val typesafeConfigV = "1.3.0"
+val jodatimeV = "2.9.4"
+val amqpClientV = "3.5.3"
 
 val typesafeConfig = Seq(
   "com.typesafe" % "config" % typesafeConfigV
@@ -39,7 +41,11 @@ val logging = Seq (
 )
 
 val amqpClient = Seq(
-    "com.rabbitmq" % "amqp-client" % "3.5.3"
+    "com.rabbitmq" % "amqp-client" % amqpClientV
+)
+
+val jodatime = Seq(
+  "joda-time" % "joda-time" % jodatimeV
 )
 
 libraryDependencies ++= logging ++ scalacheck ++ scalatest ++ amqpClient ++ scalaz ++ argonaut ++ typesafeConfig
