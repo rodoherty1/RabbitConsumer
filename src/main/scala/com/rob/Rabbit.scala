@@ -14,15 +14,21 @@ import scala.util.Try
 import com.typesafe.config.{Config, ConfigFactory}
 import org.slf4j.LoggerFactory
 
+import scalaz.concurrent.Task
+import scalaz.stream._
 
 
-case class Cxn(connection: Connection, channel: Channel, queueName: String)
+
+case class Cxn(connection: Connection, channel: com.rabbitmq.client.Channel, queueName: String)
 
 object Rabbit {
 
+  val jsonPreamble = "{\n    \"all\": ["
+  val jsonPostamble = "]}"
+
   val logger = LoggerFactory.getLogger(Rabbit.getClass)
 
-  val conf = ConfigFactory.load("uat.conf")
+  val conf = ConfigFactory.load("local.conf")
 
   val connections = conf.getConfigList("amqp.connections").asScala
 
@@ -61,64 +67,40 @@ object Rabbit {
     } yield ()
   }
 
-
-
   def all() = {
     val cxns = connections.map(init)
 
     connections zip cxns foreach {
       case (config, cxn) =>
-        val fileName = config.getString("fileName")
+        val filename = config.getString("fileName").replaceFirst("^~", System.getProperty("user.home"))
 
-        val file = new File(fileName.replaceFirst("^~", System.getProperty("user.home")))
-        file.createNewFile()
+        ackAll(filename)(cxn).run.run
 
-        val pw = new PrintWriter(new FileOutputStream(file, true))
-
-        ackAll(pw)(cxn)
-
-        pw.close()
         close(cxn)
     }
   }
 
 
-  private def ackAll(pw: PrintWriter)(cxn: Cxn): Unit = {
-    def loop(count: Int = 0): Unit = {
-      ackOne(cxn)(count) match {
-        case Some(json) =>
-          pw.append(json.spaces2)
-          pw.append(",\n")
-          loop(count + 1)
-
-        case None => println ("No new messages")
-      }
-    }
-
-    loop(count = 0)
+  private def ackAll(filename: String)(cxn: Cxn): Process[Task, Unit] = {
+    ackOne(cxn) map (_.spaces2) pipe text.utf8Encode to io.fileChunkW(filename)
   }
 
 
-  private def ackOne(cxn: Cxn)(count: Int = 0): Option[Json] = {
+  private def ackOne(cxn: Cxn): Process0[Json] = {
     val response = Option(cxn.channel.basicGet(cxn.queueName, false))
 
-    val json = response.flatMap{ res => {
+    val json = response.flatMap { res => {
       val msgBody = new String(res.getBody, "UTF-8")
 
       cxn.channel.basicAck(res.getEnvelope.getDeliveryTag, false)
 
-      println(s"""Acking message #$count """)
       msgBody.parseOption
     }
     }
 
-    json
+    json match {
+      case Some(txt) => Process.emit(txt) ++ ackOne(cxn)
+      case None      => Process.halt
+    }
   }
-//
-//
-//  def x() = {
-//    val dt = new DateTime()
-//    val fmt = DateTimeFormat.forPattern("MMMM, yyyy")
-//    fmt.print(dt)
-//  }
 }
