@@ -74,19 +74,19 @@ object Rabbit {
       case (config, cxn) =>
         val filename = config.getString("fileName").replaceFirst("^~", System.getProperty("user.home"))
 
-        ackAll(filename)(cxn).run.run
+        getMessages(filename)(cxn).run.run
 
         close(cxn)
     }
   }
 
 
-  private def ackAll(filename: String)(cxn: Cxn): Process[Task, Unit] = {
-    ackOne(cxn) map (_.spaces2) pipe text.utf8Encode to io.fileChunkW(filename)
+  private def getMessages(filename: String)(cxn: Cxn): Process[Task, Unit] = {
+    Process(jsonPreamble) ++ (receiveAll(cxn) map (_.spaces2) intersperse ",") ++ Process(jsonPostamble) pipe text.utf8Encode to io.fileChunkW(filename)
   }
 
 
-  private def ackOne(cxn: Cxn): Process0[Json] = {
+  private def receiveAll(cxn: Cxn): Process0[Json] = {
     val response = Option(cxn.channel.basicGet(cxn.queueName, false))
 
     val json = response.flatMap { res => {
@@ -99,7 +99,7 @@ object Rabbit {
     }
 
     json match {
-      case Some(txt) => Process.emit(txt) ++ ackOne(cxn)
+      case Some(txt) => Process.emit(txt) ++ receiveAll(cxn)
       case None      => Process.halt
     }
   }
