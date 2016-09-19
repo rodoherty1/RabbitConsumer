@@ -26,29 +26,30 @@ object Rabbit {
 
   val logger = LoggerFactory.getLogger(Rabbit.getClass)
 
+  private def connectionFactory(config: Config): ConnectionFactory = {
+    val cxnFactory = new ConnectionFactory()
 
-  def init(cxn: Config): Cxn = {
-    val exchange     = cxn.getString("exchangeName")
-    val queueName    = cxn.getString("queue")
-    val routingKey   = cxn.getString("routingKey")
+    cxnFactory.setHost(config.getString("ip"))
+    cxnFactory.setPort(config.getInt("port"))
+    cxnFactory.setUsername(config.getString("user"))
+    cxnFactory.setPassword(config.getString("password"))
 
-    val factory = {
-      val cxnFactory = new ConnectionFactory()
+    if (config.getBoolean("useSSL")) cxnFactory.useSslProtocol()
 
-      cxnFactory.setHost(cxn.getString("ip"))
-      cxnFactory.setPort(cxn.getInt("port"))
-      cxnFactory.setUsername(cxn.getString("user"))
-      cxnFactory.setPassword(cxn.getString("password"))
+    cxnFactory
+  }
 
-      if (cxn.getBoolean("useSSL")) cxnFactory.useSslProtocol()
 
-      cxnFactory
-    }
+  private def init(config: Config): Cxn = {
+    val exchange     = config.getString("exchangeName")
+    val queueName    = config.getString("queue")
+    val routingKey   = config.getString("routingKey")
 
-    val connection = factory.newConnection()
+    val connection = connectionFactory(config).newConnection()
     val channel    = connection.createChannel()
 
     channel.exchangeDeclarePassive(exchange)
+
     channel.queueDeclare(queueName, true, false, false, Map.empty[String, AnyRef].asJava).getQueue
     channel.queueBind(queueName, exchange, routingKey)
 
@@ -61,11 +62,22 @@ object Rabbit {
       _ <- Try(cxn.connection.close())
     } yield ()
   }
-  def local() = all("local.conf")
 
-  def uat() = all("uat.conf")
+  def local() = all("local")
+  def uat() = all("uat")
+  def oat() = all("oat")
 
-  def oat() = all("oat.conf")
+  def done(configName: String): Unit = {
+    val connections = ConfigFactory.load(configName).getConfigList("amqp.connections").asScala
+
+    connections.foreach { config =>
+      val queueName    = config.getString("queue")
+      val connection = connectionFactory(config).newConnection()
+      val channel    = connection.createChannel()
+      println(s"Deleting $queueName from $configName")
+      channel.queueDelete(queueName)
+    }
+  }
 
   def all(configName: String): Unit = {
     val connections = ConfigFactory.load(configName).getConfigList("amqp.connections").asScala
@@ -80,13 +92,13 @@ object Rabbit {
 
         close(cxn)
     }
-  }
 
+    println(s"Done receiving $configName messages")
+  }
 
   private def getMessages(filename: String)(cxn: Cxn): Process[Task, Unit] = {
     Process(jsonPreamble) ++ (receiveAll(cxn) map (_.spaces2) intersperse ",") ++ Process(jsonPostamble) pipe text.utf8Encode to io.fileChunkW(filename)
   }
-
 
   private def receiveAll(cxn: Cxn): Process0[Json] = {
     val response = Option(cxn.channel.basicGet(cxn.queueName, false))
