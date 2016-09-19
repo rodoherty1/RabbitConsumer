@@ -1,7 +1,5 @@
 package com.rob
 
-import java.io.{File, FileOutputStream, PrintWriter}
-
 import com.rabbitmq.client._
 
 import scalaz._
@@ -28,9 +26,6 @@ object Rabbit {
 
   val logger = LoggerFactory.getLogger(Rabbit.getClass)
 
-  val conf = ConfigFactory.load("local.conf")
-
-  val connections = conf.getConfigList("amqp.connections").asScala
 
   def init(cxn: Config): Cxn = {
     val exchange     = cxn.getString("exchangeName")
@@ -66,8 +61,15 @@ object Rabbit {
       _ <- Try(cxn.connection.close())
     } yield ()
   }
+  def local() = all("local.conf")
 
-  def all() = {
+  def uat() = all("uat.conf")
+
+  def oat() = all("oat.conf")
+
+  def all(configName: String): Unit = {
+    val connections = ConfigFactory.load(configName).getConfigList("amqp.connections").asScala
+
     val cxns = connections.map(init)
 
     connections zip cxns foreach {
